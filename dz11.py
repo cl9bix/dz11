@@ -1,94 +1,133 @@
-from datetime import datetime
 from collections import UserDict
+from datetime import date
+import datetime
+contacts = {}
 
 class Field:
     
     def __init__(self, value):
         if not isinstance(value, str):
             raise ValueError("Value must be a string")
-        self.value = value
+        self._value = value
     
     def __str__(self) -> str:
-        return str(self.value)
+        return str(self._value)
     
     def __repr__(self):
         return str(self)
     
+    def get_value(self):
+        return self._value
+    
+    def set_value(self, value):
+        if not isinstance(value, str):
+            raise ValueError("Value must be a string")
+        self._value = value
 
+    
 class Name(Field):
     pass
 
-
 class Phone(Field):
-    def __init__(self, value):
-        super().__init__(value)
-        if not self._validate_phone_number(value):
-            raise ValueError("Invalid phone number format")
-
-    def _validate_phone_number(self, value):
-        # assume that the phone number must contain at least 7 digits and 
-        # can have optional whitespace and dashes between the digits
-        return len(''.join(filter(str.isdigit, value))) >= 7
-
     
-class Birthday(Field):
     def __init__(self, value):
         super().__init__(value)
-        if not self._validate_birthday(value):
-            raise ValueError("Invalid birthday format")
+        if not value.isdigit():
+            raise ValueError("Phone number must be a string of digits only")
 
-    def _validate_birthday(self, value):
-        try:
-            # assume that the birthday must be in YYYY-MM-DD format and a valid date
-            datetime.strptime(value, '%Y-%m-%d')
-            return True
-        except ValueError:
-            return False
-
-
+    def __eq__(self, other):
+        if isinstance(other, Phone):
+            return self.value == other.value
+        return False
+    
 class Record:
     
     def __init__(self, name, phone=None, birthday=None):
-        self.name = Name(name)
-        self.phones = []
-        if phone:
-            self.add_phone(phone)
-        self.birthday = None
+        self.name = name
+        self.phones = {phone.value} if phone else set()
         if birthday:
-            self.set_birthday(birthday)
+            try:
+                birthday_date = date.fromisoformat(birthday.value)
+                if birthday_date.year < 1900 or birthday_date.year > date.today().year:
+                    raise ValueError("Invalid birthday year")
+                self.birthday = birthday_date
+            except ValueError:
+                raise ValueError("Invalid birthday format. Use ISO format 'YYYY-MM-DD'")
+        else:
+            self.birthday = None
     
+    def days_to_birthday(self):
+        if self.birthday is None:
+            return None
+        today = date.today()
+        next_birthday = date(today.year, self.birthday.month, self.birthday.day)
+        if next_birthday < today:
+            next_birthday = date(today.year + 1, self.birthday.month, self.birthday.day)
+        return (next_birthday - today).days
+        
+
     def add_phone(self, phone_number):
-        self.phones.append(Phone(phone_number))
-    
+        if not isinstance(phone_number, Phone):
+            phone_number = Phone(phone_number)
+        self.phones.add(phone_number.value)
+        return f'Contact with name: {self.name} is added!'
+
     def remove_phone(self, phone_number):
-        for phone in self.phones:
-            if str(phone) == phone_number:
-                self.phones.remove(phone)
-                return f'Phone number {phone_number} removed for contact {self.name}'
+        if phone_number in self.phones:
+            self.phones.remove(phone_number)
+            return f'Contact with name: {self.name} removed!'
         return f'Phone number {phone_number} not found for contact {self.name}'
 
     def edit_phone(self, old_phone_number, new_phone_number):
         for phone in self.phones:
             if str(phone) == old_phone_number:
-                phone.value = new_phone_number
+                new_phone = Phone(new_phone_number)
+                self.phones.add(new_phone.value)
                 return f'Phone number {old_phone_number} updated to {new_phone_number} for contact {self.name}'
-        return f'Phone number {old_phone_number} not found for contact {self.name}'
-    
-    def set_birthday(self, birthday):
-        self.birthday = Birthday(birthday)
-    
-    def days_to_birthday(self):
-        if not self.birthday:
-            return 'Birthday not set for contact'
-        today = datetime.today()
-        this_year_birthday = datetime.strptime(f'{today.year}-{self.birthday.value[5:]}', '%Y-%m-%d')
-        if this_year_birthday < today:
-            this_year_birthday = datetime.strptime(f'{today.year + 1}-{self.birthday.value[5:]}', '%Y-%m-%d')
-        days_to_birthday = (this_year_birthday - today).days
-        return days_to_birthday
+            return f'Phone number {old_phone_number} not found for contact {self.name}'
     
 
+    def __str__(self):
+
+        return f'Name: {self.name}\nPhones:\n{",".join(self.phones)}'
+
+
+class Birthday(Field):
+    def __init__(self, value=None):
+        if value is not None and not isinstance(value, datetime.date):
+            raise ValueError("Value must be a date object")
+        self.value = value
+    def __init__(self, value):
+        super().__init__(value)
+        self.date = None
+        try:
+            self.date = datetime.datetime.strptime(value, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValueError("Invalid date format, should be YYYY-MM-DD")
+
+    def __eq__(self, other):
+        if isinstance(other, Birthday):
+            return self.date == other.date
+        return False
+
+    def __str__(self):
+        return str(self.date)
+
+    @property
+    def value(self):
+        return str(self.date)
+
+    @value.setter
+    def value(self, value):
+        try:
+            self.date = datetime.datetime.strptime(value, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValueError("Invalid date format, should be YYYY-MM-DD")    
+
 class AddressBook(UserDict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.page_size = 5  # кількість записів на сторінці
 
     def add_record(self, record):
         self.data[record.name.value] = record
@@ -106,11 +145,16 @@ class AddressBook(UserDict):
         return f'Contact {name} not found in the address book!'
 
     def __str__(self):
-        records_str = '\n'.join(str(record) for record in self.data.values())
-        return f'Address book:\n{records_str}'
-    
+        return 'Address book:\n' + '\n'.join(str(record) for record in self.data.values())
+
     def show_all(self):
-        return '\n'.join([str(rec) for rec in self.data.values()])  
+        curent_index = 0  
+        records = list(self.data.values())
+        while curent_index < len(records):
+            page_records = records[curent_index:curent_index+self.page_size]
+            for record in page_records:
+                yield str(record)
+            curent_index += self.page_size
 
 
 contacts = AddressBook()
@@ -139,18 +183,33 @@ def phone(name):
         return f'Contact with name: {name} is not found!'
 
 
-def change(name, new_phone_number):
-    if name in contacts:
-        contacts[name] = new_phone_number
-        return f'Phone number for user {name} is changed to {new_phone_number}.'
-    else:
-        return f'User with name: {name} is not found!'
+def change(*args):
 
+    name = Name(args[0])
+    old_phone = args[1]
+    new_phone = args[2]
+    if name.value not in contacts.keys():
+        return f"Contact {name.value} not found"
+    if old_phone not in contacts[name.value].phones:
+        return f"Phone {old_phone} not found for {name.value}"
+    if new_phone in contacts[name.value].phones:
+        return "Phone already in list"
+    contacts[name.value].phones.remove(old_phone)
+    contacts[name.value].phones.add(new_phone)
+
+    return f"Contact {name.value} with phone number {old_phone} was updated with new phone number {new_phone}"
+
+    
+@input_error
+def add_phone(name, phone_number):
+    if name not in contacts:
+        return f'Contact {name} not found in the address book!'
+    contacts[name].phones.add(phone_number)
+    return f"New phone number {phone_number} added to the contact {name}"
+    
 
 def showall():
-    # result = 'List of all contacts:\n'
-    # for name, phone_number in contacts.items():
-    #     result += f'{name}: {phone_number}\n'
+
     return contacts.show_all()
 
 
@@ -170,11 +229,14 @@ COMMANDS = {'hello': hello,
             'add': add_contact,
             'change': change,
             'phone': phone,
-            'show all': showall, 
+            'new number': add_phone,
+            'show all': showall,
+            'birthday': days_to_birthday,
             'goodbye': close_bot,
             'close': close_bot, 
             'exit': close_bot 
             }
+
 
 
 def command_handler(text):
